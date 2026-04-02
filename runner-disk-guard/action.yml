@@ -1,0 +1,29 @@
+name: Runner disk guard (self-hosted)
+description: >-
+  If root filesystem use is above a threshold, prune old entries under the
+  runner cache directory (default /tmp/runner-cache).
+
+inputs:
+  cache-root:
+    description: Directory to prune when over threshold.
+    required: false
+    default: /tmp/runner-cache
+  threshold-percent:
+    description: Run cleanup when disk use exceeds this percentage.
+    required: false
+    default: "80"
+  show-df:
+    description: If true, run df -h before and after cleanup when triggered.
+    required: false
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - name: Disk guard
+      shell: bash
+      env:
+        CACHE_ROOT: ${{ inputs.cache-root }}
+        THRESHOLD_PERCENT: ${{ inputs.threshold-percent }}
+        SHOW_DF: ${{ inputs.show-df }}
+      run: bash "${{ github.action_path }}/disk-guard.sh"
