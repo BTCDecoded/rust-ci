@@ -22,6 +22,8 @@ Wraps [`dtolnay/rust-toolchain`](https://github.com/dtolnay/rust-toolchain) with
 
 Use `toolchain-file` when the repo owns the channel; use the default pin when you want org-wide consistency without per-repo files.
 
+**Self-hosted runners (shared disk, concurrent jobs):** If you see `rustc: Text file busy` (exit 126 / `ETXTBSY`) during `install-rust-toolchain`, rustup is usually replacing the `~/.cargo/bin` proxies while another job is executing them. This action exports `RUSTUP_PERMIT_COPY_RENAME` and `RUSTUP_NO_SELF_UPDATE` for all steps so file updates use a safer pattern and rustup does not self-update mid-job. If flakes persist, reduce parallelism on that runner (e.g. workflow `concurrency` per runner name, or separate `CARGO_HOME`/`RUSTUP_HOME` per job in isolated environments).
+
 ### `strip-patch-crates-io`
 
 Removes **`[patch.crates-io]`** sections from `Cargo.toml` and `.cargo/config.toml` under a chosen directory so **CI resolves dependencies from crates.io** instead of local path overrides (typical monorepo / path-dev setup).

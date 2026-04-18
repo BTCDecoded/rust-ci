@@ -21,6 +21,19 @@ inputs:
 runs:
   using: composite
   steps:
+    # Apply to every subsequent step (including dtolnay's rustc invocations). dtolnay only sets
+    # RUSTUP_PERMIT_COPY_RENAME on the rustup toolchain install step; without a global setting,
+    # concurrent jobs on a shared self-hosted runner can hit ETXTBSY ("Text file busy") on the
+    # ~/.cargo/bin/rustc proxy while rustup replaces it. RUSTUP_NO_SELF_UPDATE avoids rustup
+    # mutating its own install mid-job (see rust-lang/rustup#2415 and related CI flakes).
+    - name: Rustup environment (mitigate rustc ETXTBSY on shared runners)
+      shell: bash
+      run: |
+        {
+          echo 'RUSTUP_PERMIT_COPY_RENAME=1'
+          echo 'RUSTUP_NO_SELF_UPDATE=1'
+        } >> "$GITHUB_ENV"
+
     - name: Install Rust (from rust-toolchain.toml, with components)
       if: ${{ inputs.toolchain-file != '' && inputs.components != '' }}
       uses: dtolnay/rust-toolchain@master
