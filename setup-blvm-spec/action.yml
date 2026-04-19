@@ -1,0 +1,37 @@
+name: Setup blvm-spec checkout
+description: >-
+  Clone the blvm-spec (Orange Paper) repository for spec-lock verification, docs, or other CI.
+  By default places the repo as a sibling of the checked-out repository (../blvm-spec).
+  Set target to a path relative to the repo root for in-tree checkouts (e.g. modules/blvm-spec).
+
+inputs:
+  working-directory:
+    description: Directory to treat as the repository root for resolving paths (relative to workspace).
+    required: false
+    default: "."
+  target:
+    description: >-
+      If empty, clone to ../blvm-spec (sibling of the repo root). If set, clone to this path
+      relative to the repository root (e.g. modules/blvm-spec).
+    required: false
+    default: ""
+  repository:
+    description: Git URL for blvm-spec (override for forks or mirrors).
+    required: false
+    default: "https://github.com/BTCDecoded/blvm-spec.git"
+  depth:
+    description: git clone --depth value (shallow clone).
+    required: false
+    default: "1"
+
+runs:
+  using: composite
+  steps:
+    - name: Clone blvm-spec
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        SETUP_BLVM_SPEC_TARGET: ${{ inputs.target }}
+        SETUP_BLVM_SPEC_REPO: ${{ inputs.repository }}
+        SETUP_BLVM_SPEC_DEPTH: ${{ inputs.depth }}
+      run: bash "${{ github.action_path }}/setup-blvm-spec.sh"

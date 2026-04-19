@@ -58,6 +58,17 @@ Manages **persistent Cargo/registry/git and optional `target`** caches on the ru
 
 Typical sequence: `bind-env` → `restore` → build → `save` (and occasional `prune` in maintenance jobs).
 
+### `setup-blvm-spec`
+
+Clones the [blvm-spec](https://github.com/BTCDecoded/blvm-spec) (Orange Paper) repository for **spec-lock** verification, mdBook includes, or any job that needs spec markdown on disk.
+
+| Input | Role |
+| --- | --- |
+| `working-directory` | Repo root for path resolution (default `.`). |
+| `target` | Empty (default): clone to **`../blvm-spec`** (sibling of the checked-out repo), matching `cargo-spec-lock verify --spec-path ../blvm-spec/...`. Set to a path **relative to the repo** (e.g. `modules/blvm-spec`) for in-tree checkouts. |
+| `repository` | Git URL (default official `blvm-spec` repo). |
+| `depth` | Shallow clone depth (default `1`). |
+
 ## Typical usage
 
 **GitHub-hosted:** `install-rust-toolchain` and often `strip-patch-crates-io` are enough.
