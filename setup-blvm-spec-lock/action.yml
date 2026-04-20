@@ -1,0 +1,25 @@
+name: Setup blvm-spec-lock checkout
+description: >-
+  Clone the blvm-spec-lock repository for CI path dependency resolution.
+  Places the repo as a sibling of the checked-out repository (../blvm-spec-lock),
+  matching the [patch.crates-io] path used in local development.
+
+inputs:
+  repository:
+    description: Git URL for blvm-spec-lock (override for forks or mirrors).
+    required: false
+    default: "https://github.com/BTCDecoded/blvm-spec-lock.git"
+  depth:
+    description: git clone --depth value (shallow clone).
+    required: false
+    default: "1"
+
+runs:
+  using: composite
+  steps:
+    - name: Clone blvm-spec-lock
+      shell: bash
+      env:
+        SETUP_BLVM_SPEC_LOCK_REPO: ${{ inputs.repository }}
+        SETUP_BLVM_SPEC_LOCK_DEPTH: ${{ inputs.depth }}
+      run: bash "${{ github.action_path }}/setup-blvm-spec-lock.sh"
