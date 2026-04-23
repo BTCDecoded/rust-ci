@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Remove [patch.crates-io] blocks so CI resolves blvm-* from crates.io (no sibling repos).
-# Skips fuzz/Cargo.toml: cargo-fuzz needs small patches (e.g. path parent + crates.io helper crates)
-# without compiling two copies of the crate under test.
+# Includes fuzz/Cargo.toml: committed patches are for local monorepo; CI strips before build.
 # Local dev keeps committed patches when the monorepo layout exists.
 set -euo pipefail
 
@@ -25,7 +24,6 @@ done < <(
     -not -path './target/*' \
     -not -path './_temp-*/*' \
     -not -path './.git/*' \
-    -not -path '*/fuzz/Cargo.toml' \
     -print0 2>/dev/null
 )
 
