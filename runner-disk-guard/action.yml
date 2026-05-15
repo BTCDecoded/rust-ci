@@ -1,7 +1,8 @@
 name: Runner disk guard (self-hosted)
 description: >-
-  If root filesystem use is above a threshold, prune old entries under the
-  runner cache directory (default /tmp/runner-cache).
+  If the root filesystem OR the filesystem that hosts the cache root is above
+  a use threshold, prune old entries under the runner cache directory (default
+  /tmp/runner-cache). This catches tmpfs /tmp filling when / is still fine.
 
 inputs:
   cache-root:
