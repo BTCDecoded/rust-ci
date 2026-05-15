@@ -83,22 +83,87 @@ Default **`cache-root`** is **`/tmp/runner-cache`**. On many Linux setups **`/tm
 
 ### A. Symlink the default path to real disk (no workflow edits)
 
-Stop the runner, move data once, then point the default path at disk:
+Pick a directory on a **large persistent volume** (example: `/mnt/data/github-runner-cache`). Workflows that keep the default **`/tmp/runner-cache`** will follow the symlink and use disk.
 
-```bash
-sudo systemctl stop actions.runner.*.service   # or your runner unit name
+1. **Find and stop the runner service(s)** (units look like `actions.runner.<org>-<repo>.<hostname>.service`). Stop every **enabled** runner on this machine:
 
-sudo mkdir -p /mnt/data/github-runner-cache
-# Preserve existing cache if you want warm builds:
-sudo rsync -a /tmp/runner-cache/ /mnt/data/github-runner-cache/ 2>/dev/null || true
-sudo rm -rf /tmp/runner-cache
-sudo ln -s /mnt/data/github-runner-cache /tmp/runner-cache
-sudo chown -R YOUR_RUNNER_USER:YOUR_RUNNER_GROUP /mnt/data/github-runner-cache
+   ```bash
+   systemctl list-unit-files --no-legend \
+     | awk '/^actions\.runner\..*\.service/ && $2 == "enabled" {print $1}'
+   ```
 
-sudo systemctl start actions.runner.*.service
-```
+   ```bash
+   systemctl list-unit-files --no-legend \
+     | awk '/^actions\.runner\..*\.service/ && $2 == "enabled" {print $1}' \
+     | xargs -r sudo systemctl stop
+   ```
 
-Pick a directory on a **large persistent volume** (here `/mnt/data/...`). Workflows that keep the default **`/tmp/runner-cache`** automatically use disk.
+   Wait until jobs drain; optionally confirm nothing is writing the cache:  
+   `sudo lsof +D /tmp/runner-cache 2>/dev/null | head` (empty is ideal).
+
+2. **Find the Unix user (and group) the runner runs as** (needed for `chown` and the write test). Use any **enabled** `actions.runner` unit (after stop, `list-units` may omit idle services, so use unit files):
+
+   ```bash
+   UNIT=$(systemctl list-unit-files --no-legend \
+     | awk '/^actions\.runner\..*\.service/ && $2 == "enabled" {print $1; exit}')
+   systemctl cat "$UNIT" | grep -E '^User=|^Group='
+   ```
+
+   If **`Group=`** is missing, use the same name as **`User=`** for `RUNNER_GROUP`, or `id -gn RUNNER_USER`. Put those in place of **`RUNNER_USER`** / **`RUNNER_GROUP`** in step 3 and 6.
+
+3. **Create the disk directory, migrate cache, replace `/tmp/runner-cache` with a symlink**
+
+   If **`/tmp/runner-cache` is already a symlink**, `rm -rf /tmp/runner-cache` only removes the link (not the target). If it is a real directory, this deletes/recreates the path under `/tmp`.
+
+   ```bash
+   DISK_CACHE=/mnt/data/github-runner-cache   # change to your volume
+   sudo mkdir -p "$DISK_CACHE"
+
+   if [ -d /tmp/runner-cache ] && [ ! -L /tmp/runner-cache ]; then
+     sudo rsync -a /tmp/runner-cache/ "$DISK_CACHE/"
+   elif [ -L /tmp/runner-cache ]; then
+     echo "Existing symlink: $(readlink -f /tmp/runner-cache) — copy from there if you still want migration."
+   fi
+
+   sudo rm -rf /tmp/runner-cache
+   sudo ln -s "$DISK_CACHE" /tmp/runner-cache
+
+   sudo chown -R RUNNER_USER:RUNNER_GROUP "$DISK_CACHE"
+   ```
+
+   Replace **`RUNNER_USER:RUNNER_GROUP`** with the values from step 2 (e.g. `josh:josh` or `runner:runner`).
+
+4. **Optional — SELinux (enforcing):** if the new path is not on a typical home/data label, you may need a context the runner can write, e.g. after policy review:
+
+   ```bash
+   sudo semanage fcontext -a -t var_lib_t "/mnt/data/github-runner-cache(/.*)?" 2>/dev/null || true
+   sudo restorecon -RFv /mnt/data/github-runner-cache
+   ```
+
+   Use the **same path** as **`DISK_CACHE`** in step 3. Adjust the SELinux **type** to match your distribution if the journal still shows denials.
+
+5. **Start the runner(s) again**
+
+   Prefer starting the **same unit names you stopped** in step 1. If you did not record them, start every **enabled** runner service:
+
+   ```bash
+   systemctl list-unit-files --no-legend \
+     | awk '/^actions\.runner\..*\.service/ && $2 == "enabled" {print $1}' \
+     | xargs -r sudo systemctl start
+   ```
+
+6. **Verify** (replace **`RUNNER_USER`** — same as step 2)
+
+   ```bash
+   readlink -f /tmp/runner-cache          # should print your DISK_CACHE path
+   df -P /tmp/runner-cache                # should show the disk filesystem, not tmpfs
+   sudo -u RUNNER_USER sh -c 'touch /tmp/runner-cache/.write-test && rm /tmp/runner-cache/.write-test'
+   ```
+
+**Notes**
+
+- **several runners on one host** — they usually share the same default **`/tmp/runner-cache`**; one symlink updates all of them.
+- **No systemd** (you only run `./run.sh` / `runsvc.sh`) — stop those processes, perform steps 3–4 as the **same user** that runs the runner (skip `systemctl`; use `chown -R` only if you created the tree as root), then start the listener again.
 
 ### B. Set `cache-root` (and disk-guard’s `cache-root`) to a disk path
 
@@ -107,7 +172,7 @@ Use the same directory in **`runner-cargo-cache`** and **`runner-disk-guard`** i
 ### C. Host maintenance
 
 - Cron or a nightly job can run **`runner-cargo-cache`** with **`operation: prune`** (same **`cache-root`**).
-- Optionally set **`TMPDIR`** for the runner service to a directory on disk (e.g. **`/var/tmp`**) so rustup and other tools do not depend on free tmpfs space.
+- **`TMPDIR` on disk:** for systemd runners, add e.g. `Environment=TMPDIR=/var/tmp` via `systemctl edit <actions.runner.unit>` so rustup and other tools avoid a full tmpfs. Create **`/var/tmp`** (or your choice) with normal permissions if needed.
 
 ## Contributing
 
