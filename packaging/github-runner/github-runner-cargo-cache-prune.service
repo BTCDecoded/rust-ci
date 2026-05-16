@@ -1,0 +1,15 @@
+[Unit]
+Description=Prune shared GitHub Actions self-hosted Cargo cache (LRU by mtime)
+Documentation=https://github.com/BTCDecoded/rust-ci
+
+[Service]
+Type=oneshot
+User=github-runner
+Group=github-runner
+# Adjust CACHE_ROOT if your shared cache lives elsewhere.
+Environment=CACHE_ROOT=/mnt/data/github-runner-cache
+Environment=PRUNE_KEEP_CARGO=20
+Environment=PRUNE_KEEP_TARGET=14
+Environment=PRUNE_KEEP_EXTRA=10
+# Path must match your rust-ci checkout (or copy cargo-cache.sh next to the runner).
+ExecStart=/bin/bash /mnt/data/bitcoin/blvm/rust-ci/runner-cargo-cache/cargo-cache.sh prune

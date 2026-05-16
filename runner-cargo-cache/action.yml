@@ -24,6 +24,9 @@ inputs:
     required: false
     default: "false"
 
+  # For operation=prune only; optional job-level env overrides still work:
+  # PRUNE_KEEP_CARGO, PRUNE_KEEP_TARGET, PRUNE_KEEP_EXTRA
+
 runs:
   using: composite
   steps:

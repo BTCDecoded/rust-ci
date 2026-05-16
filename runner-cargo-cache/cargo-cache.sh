@@ -2,6 +2,25 @@
 # Self-hosted runner: bind env, restore/save Cargo + target caches under /tmp/runner-cache.
 set -euo pipefail
 
+# Keep the K newest immediate subdirs (by mtime). Requires GNU find -printf (Linux runners).
+prune_newest_k() {
+  local parent="${1:?}"
+  local keep="${2:?}"
+  [ -d "$parent" ] || return 0
+  local n
+  n=$(find "$parent" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l)
+  [ "$n" -le "$keep" ] && return 0
+  find "$parent" -mindepth 1 -maxdepth 1 -type d -printf '%T@\t%p\n' 2>/dev/null |
+    sort -n |
+    head -n "-${keep}" |
+    cut -f2- |
+    while IFS= read -r dir; do
+      [ -z "$dir" ] && continue
+      echo "  prune: rm -rf ${dir}"
+      rm -rf "$dir"
+    done
+}
+
 op="${1:?operation required: bind-env|restore|save|prune}"
 
 case "$op" in
@@ -99,18 +118,15 @@ save)
 
 prune)
   CACHE_ROOT="${CACHE_ROOT:-/tmp/runner-cache}"
-  echo "🧹 Cleaning up old caches..."
-  if [ -d "$CACHE_ROOT/cargo" ]; then
-    find "$CACHE_ROOT/cargo" -maxdepth 1 -type d -mtime +1 2>/dev/null | head -n -5 | xargs rm -rf 2>/dev/null || true
-  fi
-  if [ -d "$CACHE_ROOT/target" ]; then
-    find "$CACHE_ROOT/target" -maxdepth 1 -type d -mtime +1 2>/dev/null | head -n -3 | xargs rm -rf 2>/dev/null || true
-  fi
+  # Override per-job: PRUNE_KEEP_CARGO, PRUNE_KEEP_TARGET, PRUNE_KEEP_EXTRA
+  KEEP_CARGO="${PRUNE_KEEP_CARGO:-12}"
+  KEEP_TARGET="${PRUNE_KEEP_TARGET:-8}"
+  KEEP_EXTRA="${PRUNE_KEEP_EXTRA:-8}"
+  echo "🧹 Pruning runner caches under ${CACHE_ROOT} (keep: cargo=${KEEP_CARGO} target=${KEEP_TARGET} extra=${KEEP_EXTRA})..."
+  prune_newest_k "$CACHE_ROOT/cargo" "$KEEP_CARGO"
+  prune_newest_k "$CACHE_ROOT/target" "$KEEP_TARGET"
   for SUB in blvm-consensus-target blvm-protocol-target blvm-node-target; do
-    D="$CACHE_ROOT/$SUB"
-    if [ -d "$D" ]; then
-      find "$D" -maxdepth 1 -type d -mtime +1 2>/dev/null | head -n -3 | xargs rm -rf 2>/dev/null || true
-    fi
+    prune_newest_k "$CACHE_ROOT/$SUB" "$KEEP_EXTRA"
   done
   ;;
 
