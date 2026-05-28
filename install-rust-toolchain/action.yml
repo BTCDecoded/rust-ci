@@ -1,8 +1,6 @@
 name: Install Rust toolchain (pinned)
 description: >-
   Thin wrapper around dtolnay/rust-toolchain for the org default pinned toolchain.
-  Auto-detects rust-toolchain.toml in the workspace when toolchain-file is not set.
-  Re-installs the resolved channel when rustc is missing (shared self-hosted runners).
 
 inputs:
   toolchain:
@@ -32,89 +30,56 @@ runs:
       shell: bash
       run: |
         {
-          echo 'RUSTUP_HOME=${RUSTUP_HOME:-$HOME/.rustup}'
-          echo 'CARGO_HOME=${CARGO_HOME:-$HOME/.cargo}'
           echo 'RUSTUP_PERMIT_COPY_RENAME=1'
           echo 'RUSTUP_NO_SELF_UPDATE=1'
         } >> "$GITHUB_ENV"
 
-    - name: Resolve toolchain source
-      id: toolchain
-      shell: bash
-      run: |
-        set -euo pipefail
-        tf="${{ inputs.toolchain-file }}"
-        if [ -z "$tf" ]; then
-          if [ -f rust-toolchain.toml ]; then
-            tf="rust-toolchain.toml"
-          elif [ -f rust-toolchain ]; then
-            tf="rust-toolchain"
-          fi
-        fi
-        echo "file=$tf" >> "$GITHUB_OUTPUT"
-        if [ -n "$tf" ]; then
-          channel=$(grep -E '^channel\s*=' "$tf" | head -1 | sed -E 's/.*=\s*"([^"]+)".*/\1/')
-          echo "channel=${channel:-${{ inputs.toolchain }}}" >> "$GITHUB_OUTPUT"
-        else
-          echo "channel=${{ inputs.toolchain }}" >> "$GITHUB_OUTPUT"
-        fi
-
-    - name: Install Rust (from rust-toolchain.toml, with components)
-      if: ${{ steps.toolchain.outputs.file != '' && inputs.components != '' }}
+    - name: Install Rust (from toolchain file, with components)
+      if: ${{ inputs.toolchain-file != '' && inputs.components != '' }}
       uses: dtolnay/rust-toolchain@master
       with:
-        toolchain-file: ${{ steps.toolchain.outputs.file }}
+        toolchain: ${{ inputs.toolchain-file }}
         components: ${{ inputs.components }}
 
-    - name: Install Rust (from rust-toolchain.toml)
-      if: ${{ steps.toolchain.outputs.file != '' && inputs.components == '' }}
+    - name: Install Rust (from toolchain file)
+      if: ${{ inputs.toolchain-file != '' && inputs.components == '' }}
       uses: dtolnay/rust-toolchain@master
       with:
-        toolchain-file: ${{ steps.toolchain.outputs.file }}
+        toolchain: ${{ inputs.toolchain-file }}
 
     - name: Install Rust (pinned version)
-      if: ${{ steps.toolchain.outputs.file == '' }}
+      if: ${{ inputs.toolchain-file == '' }}
       uses: dtolnay/rust-toolchain@master
       with:
         toolchain: ${{ inputs.toolchain }}
 
     - name: Add rustup components
-      if: ${{ steps.toolchain.outputs.file == '' && inputs.components != '' }}
+      if: ${{ inputs.toolchain-file == '' && inputs.components != '' }}
       shell: bash
       run: rustup component add ${{ inputs.components }} --toolchain "${{ inputs.toolchain }}"
 
-    - name: Ensure rustc is installed and executable (self-hosted hardening)
+    - name: Verify rustc is executable (self-hosted hardening)
       shell: bash
       run: |
         set -euo pipefail
-        export RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}"
-        export CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}"
-        CHANNEL="${{ steps.toolchain.outputs.channel }}"
-        TF="${{ steps.toolchain.outputs.file }}"
-        echo "RUSTUP_HOME=$RUSTUP_HOME"
-        echo "CARGO_HOME=$CARGO_HOME"
-        echo "Resolved channel: $CHANNEL"
-        extra=()
-        if [ -n "$TF" ] && [ -f "$TF" ]; then
-          if grep -q 'rustfmt' "$TF" 2>/dev/null; then extra+=(--component rustfmt); fi
-          if grep -q 'clippy' "$TF" 2>/dev/null; then extra+=(--component clippy); fi
-        fi
-        # cargo install / rust-toolchain.toml can select a channel whose directory is missing
-        # on shared runners (ENOENT on .../bin/rustc). Re-install when absent or not executable.
-        if ! rustup which rustc >/dev/null 2>&1; then
-          echo "⚠️  Active rustc not found — installing $CHANNEL"
-          rustup toolchain install "$CHANNEL" --profile minimal "${extra[@]}"
-          rustup default "$CHANNEL"
+        # Resolve the effective channel: prefer rust-toolchain.toml in workspace.
+        if [ -f rust-toolchain.toml ]; then
+          CHANNEL=$(grep -E '^channel\s*=' rust-toolchain.toml | head -1 | sed -E 's/.*=\s*"([^"]+)".*/\1/')
+        elif [ -f rust-toolchain ]; then
+          CHANNEL=$(cat rust-toolchain | tr -d '[:space:]')
         else
-          RUSTC="$(rustup which rustc)"
-          if [ ! -x "$RUSTC" ]; then
-            echo "⚠️  rustc not executable at $RUSTC — reinstalling $CHANNEL"
-            rustup toolchain uninstall "$CHANNEL" || true
-            rustup toolchain install "$CHANNEL" --profile minimal "${extra[@]}"
-            rustup default "$CHANNEL"
-          fi
+          CHANNEL="${{ inputs.toolchain }}"
         fi
-        RUSTC="$(rustup which rustc)"
-        test -x "$RUSTC"
-        "$RUSTC" --version
-        rustup show active-toolchain
+        CHANNEL="${CHANNEL:-${{ inputs.toolchain }}}"
+        # On shared self-hosted runners the toolchain directory can be present in rustup's
+        # registry but the actual compiler binary missing (leftover from a failed/interrupted
+        # install).  Re-install when rustc is not executable.
+        RUSTC_PATH="$HOME/.rustup/toolchains/${CHANNEL}-x86_64-unknown-linux-gnu/bin/rustc"
+        if [ ! -x "$RUSTC_PATH" ]; then
+          echo "⚠️  rustc not found at $RUSTC_PATH — reinstalling $CHANNEL"
+          rustup toolchain install "$CHANNEL" --profile minimal --component rustfmt --component clippy || \
+            rustup toolchain install "$CHANNEL" --profile minimal
+          rustup default "$CHANNEL"
+        fi
+        rustc --version
+        cargo --version
