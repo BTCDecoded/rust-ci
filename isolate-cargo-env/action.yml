@@ -1,0 +1,44 @@
+name: Isolate Cargo env (self-hosted)
+description: >-
+  Per-job CARGO_HOME under RUNNER_TEMP with shared registry/git symlinks.
+  Prevents parallel jobs on shared runner OS users from racing on ~/.cargo/bin
+  during cargo install and from corrupting per-job metadata.
+
+inputs:
+  cargo-home-subdir:
+    description: Subdirectory under RUNNER_TEMP for CARGO_HOME (default cargo).
+    required: false
+    default: cargo
+  shared-registry:
+    description: Path to shared registry (default $HOME/.cargo/registry).
+    required: false
+    default: ""
+  shared-git:
+    description: Path to shared git checkouts (default $HOME/.cargo/git).
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Isolate CARGO_HOME
+      shell: bash
+      env:
+        CARGO_HOME_SUBDIR: ${{ inputs.cargo-home-subdir }}
+        SHARED_REGISTRY: ${{ inputs.shared-registry }}
+        SHARED_GIT: ${{ inputs.shared-git }}
+      run: |
+        set -euo pipefail
+        CI_CARGO_HOME="${RUNNER_TEMP:?RUNNER_TEMP unset}/${CARGO_HOME_SUBDIR}"
+        mkdir -p "${CI_CARGO_HOME}/bin"
+        REGISTRY_SRC="${SHARED_REGISTRY:-${HOME}/.cargo/registry}"
+        GIT_SRC="${SHARED_GIT:-${HOME}/.cargo/git}"
+        if [ -d "${REGISTRY_SRC}" ]; then
+          ln -sfn "${REGISTRY_SRC}" "${CI_CARGO_HOME}/registry"
+        fi
+        if [ -d "${GIT_SRC}" ]; then
+          ln -sfn "${GIT_SRC}" "${CI_CARGO_HOME}/git"
+        fi
+        echo "CARGO_HOME=${CI_CARGO_HOME}" >> "${GITHUB_ENV}"
+        echo "PATH=${CI_CARGO_HOME}/bin:${PATH}" >> "${GITHUB_ENV}"
+        echo "Isolated CARGO_HOME=${CI_CARGO_HOME}"

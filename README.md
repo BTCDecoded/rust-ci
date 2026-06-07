@@ -22,7 +22,15 @@ Wraps [`dtolnay/rust-toolchain`](https://github.com/dtolnay/rust-toolchain) with
 
 Use `toolchain-file` when the repo owns the channel; use the default pin when you want org-wide consistency without per-repo files.
 
-**Self-hosted runners (shared disk, concurrent jobs):** If you see `rustc: Text file busy` (exit 126 / `ETXTBSY`) during `install-rust-toolchain`, rustup is usually replacing the `~/.cargo/bin` proxies while another job is executing them. This action exports `RUSTUP_PERMIT_COPY_RENAME` and `RUSTUP_NO_SELF_UPDATE` for all steps so file updates use a safer pattern and rustup does not self-update mid-job. If flakes persist, reduce parallelism on that runner (e.g. workflow `concurrency` per runner name, or separate `CARGO_HOME`/`RUSTUP_HOME` per job in isolated environments).
+**Self-hosted runners (shared disk, concurrent jobs):** If you see `rustc: Text file busy` (exit 126 / `ETXTBSY`) during `install-rust-toolchain`, rustup is usually replacing the `~/.cargo/bin` proxies while another job is executing them. This action exports `RUSTUP_PERMIT_COPY_RENAME` and `RUSTUP_NO_SELF_UPDATE` for all steps so file updates use a safer pattern and rustup does not self-update mid-job.
+
+**Multiple listeners, one Unix user (e.g. Zeus `zeus-workstation` + `zeus-workstation-2`):** Both services often run as **`github-runner`** with the same **`HOME=/var/lib/github-runner`**, so concurrent jobs on different listeners still collide on **`~/.cargo/bin/cargo`**. Fix at the host:
+
+1. **`packaging/github-runner/runner-toolchain-isolation.conf`** — systemd drop-in per extra listener (`HOME` / `CARGO_HOME` / `RUSTUP_HOME` under e.g. `/var/lib/github-runner-2`).
+2. **`packaging/github-runner/bootstrap-isolated-runner-toolchain.sh`** — one-time seed of rustup + **`cargo-audit`** for that home.
+3. Workflows: **`isolate-cargo-env`** per job + invoke **`cargo-audit`** (not **`cargo audit`**) when auditing; pre-install audit on the runner so jobs skip **`cargo install`**.
+
+If flakes persist after host isolation, reduce parallelism (workflow **`concurrency`**) or use fully job-local **`RUSTUP_HOME`** (slower: reinstalls toolchain per job).
 
 ### `strip-patch-crates-io`
 
@@ -43,6 +51,18 @@ If **root filesystem (`/`)** *or* the **filesystem containing `cache-root`** is 
 | `cache-root` | Directory to prune when over threshold. |
 | `threshold-percent` | Trigger cleanup when **either** measured use exceeds this percent (default **80**). |
 | `show-df` | If true, log `df -h` before/after when cleanup runs. |
+
+### `isolate-cargo-env` (self-hosted)
+
+Sets **`CARGO_HOME`** to **`${RUNNER_TEMP}/<subdir>`** (default `cargo`) and prepends **`$CARGO_HOME/bin`** to **`PATH`**. Symlinks **`registry`** and **`git`** to the runner user's shared store (default **`$HOME/.cargo/...`**) so per-job metadata stays isolated without duplicating downloaded crates.
+
+Use **early in the job**, before **`install-rust-toolchain`** / **`cargo install`**, on workflows that run on shared self-hosted users. Pairs with **`runner-cargo-cache`** (restore still populates the shared registry; isolated **`CARGO_HOME`** picks it up via symlink).
+
+| Input | Role |
+| --- | --- |
+| `cargo-home-subdir` | Subdir under **`RUNNER_TEMP`** (default **`cargo`**). |
+| `shared-registry` | Override registry symlink target (default **`$HOME/.cargo/registry`**). |
+| `shared-git` | Override git symlink target (default **`$HOME/.cargo/git`**). |
 
 ### `runner-cargo-cache` (self-hosted)
 
