@@ -1,0 +1,11 @@
+# Copy to /var/lib/github-runner/.env and /var/lib/github-runner-2/.env (one per listener).
+# Restart the matching actions.runner.*.service after edits.
+#
+#   sudo cp runner-env.example /var/lib/github-runner/.env
+#   sudo chown github-runner:github-runner /var/lib/github-runner/.env
+#   sudo systemctl restart actions.runner.BTCDecoded.zeus-workstation.service
+
+LANG=en_US.UTF-8
+CARGO_BUILD_JOBS=4
+RUST_TEST_THREADS=4
+CARGO_INCREMENTAL=0

@@ -28,7 +28,9 @@ Use `toolchain-file` when the repo owns the channel; use the default pin when yo
 
 1. **`packaging/github-runner/runner-toolchain-isolation.conf`** — systemd drop-in per extra listener (`HOME` / `CARGO_HOME` / `RUSTUP_HOME` under e.g. `/var/lib/github-runner-2`).
 2. **`packaging/github-runner/bootstrap-isolated-runner-toolchain.sh`** — one-time seed of rustup + **`cargo-audit`** for that home.
-3. Workflows: **`isolate-cargo-env`** per job + invoke **`cargo-audit`** (not **`cargo audit`**) when auditing; pre-install audit on the runner so jobs skip **`cargo install`**.
+3. **`packaging/github-runner/runner-memory-limits.conf`** — **`MemoryMax=32G`** / **`MemorySwapMax=8G`** per listener (`MemorySwapMax` only applies if the host has swap).
+4. **`packaging/github-runner/runner-env.example`** — copy to each listener's **`.env`**: **`CARGO_BUILD_JOBS=4`**, **`CARGO_INCREMENTAL=0`**.
+5. Workflows: **`isolate-cargo-env`** per job + invoke **`cargo-audit`** (not **`cargo audit`**) when auditing; pre-install audit on the runner so jobs skip **`cargo install`**.
 
 If flakes persist after host isolation, reduce parallelism (workflow **`concurrency`**) or use fully job-local **`RUSTUP_HOME`** (slower: reinstalls toolchain per job).
 
