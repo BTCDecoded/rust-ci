@@ -3,6 +3,9 @@ description: >-
   If the root filesystem OR the filesystem that hosts the cache root is above
   a use threshold, prune old entries under the runner cache directory (default
   /tmp/runner-cache). This catches tmpfs /tmp filling when / is still fine.
+  Also checks the filesystems holding GITHUB_WORKSPACE and RUNNER_TEMP, and
+  fails the step if any checked filesystem is still above fail-percent or
+  below min-free-gb after pruning.
 
 inputs:
   cache-root:
@@ -13,6 +16,14 @@ inputs:
     description: Run cleanup when disk use exceeds this percentage.
     required: false
     default: "80"
+  fail-percent:
+    description: Fail the step if any checked filesystem is above this use percentage after pruning.
+    required: false
+    default: "97"
+  min-free-gb:
+    description: Fail the step if any checked filesystem has less than this many GiB free after pruning (0 disables).
+    required: false
+    default: "5"
   show-df:
     description: If true, run df -h before and after cleanup when triggered.
     required: false
@@ -26,5 +37,7 @@ runs:
       env:
         CACHE_ROOT: ${{ inputs.cache-root }}
         THRESHOLD_PERCENT: ${{ inputs.threshold-percent }}
+        FAIL_PERCENT: ${{ inputs.fail-percent }}
+        MIN_FREE_GB: ${{ inputs.min-free-gb }}
         SHOW_DF: ${{ inputs.show-df }}
       run: bash "${{ github.action_path }}/disk-guard.sh"
