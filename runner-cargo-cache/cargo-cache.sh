@@ -21,6 +21,15 @@ prune_newest_k() {
     done
 }
 
+# CI sets CARGO_TARGET_DIR to the per-run directory. Otherwise cargo uses ./target.
+target_tree() {
+  if [ -n "${CARGO_TARGET_DIR:-}" ]; then
+    printf '%s' "$CARGO_TARGET_DIR"
+  else
+    printf '%s' "./target"
+  fi
+}
+
 op="${1:?operation required: bind-env|restore|save|prune}"
 
 case "$op" in
@@ -51,9 +60,10 @@ restore)
   fi
 
   if [ -n "${TARGET_CACHE_DIR:-}" ]; then
+    local_target="$(target_tree)"
     if [ -d "$TARGET_CACHE_DIR" ] && [ "$(ls -A "$TARGET_CACHE_DIR" 2>/dev/null)" ]; then
-      mkdir -p ./target
-      rsync -a --delete "$TARGET_CACHE_DIR/" ./target/ || true
+      mkdir -p "$local_target"
+      rsync -a --delete "$TARGET_CACHE_DIR/" "$local_target/" || true
     else
       echo "💿 No target cache found, will build from scratch"
     fi
@@ -87,8 +97,9 @@ restore)
 
 save)
   if [ "${SAVE_TARGET_ONLY:-false}" = "true" ] || [ "${SAVE_TARGET_ONLY:-0}" = "1" ]; then
-    if [ -n "${TARGET_CACHE_DIR:-}" ] && [ -d "./target" ]; then
-      rsync -a --delete "./target/" "$TARGET_CACHE_DIR/" || true
+    local_target="$(target_tree)"
+    if [ -n "${TARGET_CACHE_DIR:-}" ] && [ -d "$local_target" ]; then
+      rsync -a --delete "$local_target/" "$TARGET_CACHE_DIR/" || true
     fi
     exit 0
   fi
@@ -102,8 +113,9 @@ save)
       rsync -a --delete "$HOME/.cargo/git/" "$CARGO_CACHE_DIR/git/" || true
     fi
   fi
-  if [ -n "${TARGET_CACHE_DIR:-}" ] && [ -d "./target" ]; then
-    rsync -a --delete "./target/" "$TARGET_CACHE_DIR/" || true
+  local_target="$(target_tree)"
+  if [ -n "${TARGET_CACHE_DIR:-}" ] && [ -d "$local_target" ]; then
+    rsync -a --delete "$local_target/" "$TARGET_CACHE_DIR/" || true
   fi
   if [ -n "${CONSENSUS_TARGET_DIR:-}" ] && [ -d "../blvm-consensus/target" ]; then
     rsync -a --delete ../blvm-consensus/target/ "$CONSENSUS_TARGET_DIR/" || true
