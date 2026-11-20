@@ -46,12 +46,22 @@ Run this **before** `cargo fetch` / `cargo build` in workflows that must behave 
 
 ### `runner-disk-guard` (self-hosted)
 
-If **root filesystem (`/`)** *or* the **filesystem containing `cache-root`** is above a threshold, prunes old **`cache-root`** subtrees (default age **7 days**, maxdepth **2**) so long-lived runners do not fill the disk. That includes the common case where **`/tmp` is a small tmpfs**, **`cache-root` defaults to `/tmp/runner-cache`**, and **`/` still has free space**—previously the guard only looked at `/` and would never prune.
+If **root filesystem (`/`)** *or* the **filesystem containing `cache-root`** is above a threshold, prunes old **cache-key** directories under **`cache-root`**. Cache keys are the immediate children of `cargo`, `target`, or `*-target` buckets, both in the flat layout (`cache-root/cargo/<key>`) and a repo-scoped layout (`cache-root/<org>/<repo>/cargo/<key>`). Structural parents such as `cache-root/<org>` and `cache-root` itself are never deleted.
+
+Pruning has two stages:
+
+1. **Age prune:** delete cache-key directories with **mtime older than 7 days**.
+2. **LRU fallback:** if the filesystem hosting **`cache-root`** is still above **`fail-percent`** or below **`min-free-gb`**, delete remaining cache-key directories oldest-mtime first, skipping entries touched in the last **`min-age-minutes`** (default **15**) so a concurrent job is not clobbered. Stops once use is at or below **`threshold-percent`** and free space meets **`min-free-gb`**, so the current build has headroom. If space cannot be recovered, the existing fail-fast check reports the same error as before.
+
+That includes the common case where **`/tmp` is a small tmpfs**, **`cache-root` defaults to `/tmp/runner-cache`**, and **`/` still has free space**—previously the guard only looked at `/` and would never prune.
 
 | Input | Role |
 | --- | --- |
 | `cache-root` | Directory to prune when over threshold. |
-| `threshold-percent` | Trigger cleanup when **either** measured use exceeds this percent (default **80**). |
+| `threshold-percent` | Trigger the age prune when **either** measured use exceeds this percent (default **80**). LRU stops once use is at or below this percent and **`min-free-gb`** is met. |
+| `fail-percent` | Fail the step if any checked filesystem is above this use percentage after pruning (default **97**). Also triggers the LRU fallback on the cache-root filesystem. |
+| `min-free-gb` | Fail the step if any checked filesystem has less than this many GiB free after pruning (**0** disables; default **5**). Also triggers the LRU fallback on the cache-root filesystem. |
+| `min-age-minutes` | LRU will not delete cache-key directories modified more recently than this (default **15**). |
 | `show-df` | If true, log `df -h` before/after when cleanup runs. |
 
 ### `isolate-cargo-env` (self-hosted)
